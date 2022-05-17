@@ -1,0 +1,188 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "PlaybookName": {
+            "defaultValue": "AS-Teams-Integration",
+            "type": "String"
+        }
+    },
+    "variables": {
+        "azuresentinel": "[concat('azuresentinel-', parameters('PlaybookName'))]",
+        "teams": "[concat('teams-', parameters('PlaybookName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('azuresentinel')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "displayName": "[parameters('PlaybookName')]",
+                "customParameterValues": {
+                },
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('teams')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "displayName": "[parameters('PlaybookName')]",
+                "customParameterValues": {
+                },
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/teams')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('PlaybookName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/connections', variables('azuresentinel'))]",
+                "[resourceId('Microsoft.Web/connections', variables('teams'))]"
+            ],
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Condition_-_Check_if_Entities_Exist": {
+                            "actions": {
+                                "Set_Variable_-_No_Entities": {
+                                    "runAfter": {},
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "Entities",
+                                        "value": ",\n         {\n            \"type\": \"TextBlock\",\n            \"text\": \"No Entities\"\n        }"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_Variable_-_Entities": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {
+                                    "For_Each_-_Entities": {
+                                        "foreach": "@triggerBody()?['object']?['properties']?['relatedEntities']",
+                                        "actions": {
+                                            "Append_to_String_Variable_-_Entities": {
+                                                "runAfter": {},
+                                                "type": "AppendToStringVariable",
+                                                "inputs": {
+                                                    "name": "Entities",
+                                                    "value": ",\n{\n            \"type\": \"FactSet\",\n            \"facts\": [\n                {\n                    \"$data\": \"${properties}\",\n                    \"title\": \"Type:\",\n                    \"value\": \"@{items('For_Each_-_Entities')?['kind']}\"\n                },\n                {\n                    \"$data\": \"${properties}\",\n                    \"title\": \"Value:\",\n                    \"value\": \"@{items('For_Each_-_Entities')?['properties']?['friendlyName']}\"\n                }\n            ]\n        }"
+                                                }
+                                            }
+                                        },
+                                        "runAfter": {},
+                                        "type": "Foreach"
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@length(triggerBody()?['object']?['properties']?['relatedEntities'])",
+                                            0
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "Initialize_Variable_-_Entities": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "Entities",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        },
+                        "Post_adaptive_card_in_a_chat_or_channel": {
+                            "runAfter": {
+                                "Condition_-_Check_if_Entities_Exist": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "messageBody": "{\n    \"type\": \"AdaptiveCard\",\n    \"body\": [\n        {\n            \"type\": \"TextBlock\",\n            \"size\": \"Medium\",\n            \"weight\": \"bolder\",\n            \"text\": \"@{triggerBody()?['object']?['properties']?['title']}\"\n        },\n        {\n            \"type\": \"ColumnSet\",\n            \"columns\": [\n                {\n                    \"type\": \"Column\",\n                    \"items\": [\n                        {\n                            \"type\": \"Image\",\n                            \"style\": \"Person\",\n                            \"url\": \"https://i1.wp.com/girlydesignblog.com/digitalartmix/wp-content/uploads/2015/11/star-wars-100-illustrations-sublime99-28.jpg\",\n                            \"size\": \"Small\"\n                        }\n                    ],\n                    \"width\": \"auto\"\n                },\n                {\n                    \"type\": \"Column\",\n                    \"items\": [\n                        {\n                            \"type\": \"TextBlock\",\n                            \"weight\": \"Bolder\",\n                            \"text\": \"Security Bot\",\n                            \"wrap\": true\n                        },\n                        {\n                            \"type\": \"TextBlock\",\n                            \"spacing\": \"None\",\n                            \"text\": \"@{concat('Created ', formatDateTime(triggerBody()?['object']?['properties']?['createdTimeUtc'], 'MM/dd/yyyy HH:mm:ss'))}\",\n                            \"isSubtle\": true,\n                            \"wrap\": true\n                        }\n                    ],\n                    \"width\": \"stretch\"\n                }\n            ]\n        },\n        {\n            \"type\": \"TextBlock\",\n            \"text\": \"@{triggerBody()?['object']?['properties']?['description']}\",\n            \"wrap\": true\n        },\n        {\n            \"type\": \"TextBlock\",\n            \"text\": \" \"\n        },\n        {\n            \"type\": \"FactSet\",\n            \"facts\": [\n                {\n                    \"$data\": \"${properties}\",\n                    \"title\": \"Tenant\",\n                    \"weight\": \"Default\",\n                    \"value\": \"@{triggerBody()?['workspaceInfo']?['WorkspaceName']}\"\n                }\n            ]\n        },\n         {\n            \"type\": \"FactSet\",\n            \"facts\": [\n                {\n                    \"$data\": \"${properties}\",\n                    \"title\": \"Severity\",\n                    \"value\": \"@{triggerBody()?['object']?['properties']?['severity']}\"\n                }\n            ]\n        },\n        {\n            \"type\": \"TextBlock\",\n            \"text\": \" \"\n        },\n        {\n            \"type\": \"TextBlock\",\n            \"weight\": \"bolder\",\n            \"text\": \"-Entities-\"\n        }\n        @{variables('Entities')},\n        {\n            \"type\": \"TextBlock\",\n            \"text\": \" \"\n        },\n    ],\n    \"actions\": [\n        {\n            \"type\": \"Action.OpenUrl\",\n            \"title\": \"View Incident\",\n            \"url\": \"@{triggerBody()?['object']?['properties']?['incidentUrl']}\"\n        }\n    ],\n    \"$schema\": \"http://adaptivecards.io/schemas/adaptive-card.json\",\n    \"version\": \"1.5\"\n}",
+                                    "recipient": {
+                                        "channelId": "",
+                                        "groupId": ""
+                                    }
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['teams']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/v1.0/teams/conversation/adaptivecard/poster/@{encodeURIComponent('User')}/location/@{encodeURIComponent('Channel')}"
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('azuresentinel'))]",
+                                "connectionName": "[variables('azuresentinel')]",
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId,'/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/azuresentinel')]"
+                            },
+                            "teams": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('teams'))]",
+                                "connectionName": "[variables('teams')]",
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId,'/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/teams')]"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
