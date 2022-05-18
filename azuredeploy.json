@@ -2,7 +2,7 @@
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
     "metadata": {
-        "comments": "This playbook is intended to be run from a Microsoft Sentinel incident. It will create a post in a Teams channel with the related Microsoft Sentinel incident and entity information..",
+        "comments": "This playbook is intended to be run from a Microsoft Sentinel incident. It will create a post in a Teams channel with the related Microsoft Sentinel incident and entity information.",
         "author": "Accelerynt"
     },
     "parameters": {
