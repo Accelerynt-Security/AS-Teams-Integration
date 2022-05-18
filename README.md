@@ -32,7 +32,7 @@ In the **Project Details** section:
 
 In the **Instance Details** section:   
 
-* **Playbook Name**: This can be left as “AS-Teams-Integration” or you may change it.  
+* **Playbook Name**: This can be left as “AS-Teams-Integration”, or you may change it.  
 
 Towards the bottom, click on “**Review + create**”. 
 
@@ -47,7 +47,7 @@ Click the one corresponding to the Logic App.
 
 ![Teams_Deploy_3](Images/Teams_Deploy_3.png)
 
-Click on the “**Edit**” button. This will bring us into the Logic Apps Designer.
+Click on the “**Edit**” button. This will bring you into the Logic Apps Designer.
 
 ![Teams_Deploy_4](Images/Teams_Deploy_4.png)
 
